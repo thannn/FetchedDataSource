@@ -68,7 +68,7 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 			snapshot.appendItems(items, toSection: section)
 		}
 
-		// bug: reloaded items are not included in the snapshot when `animatingDifferences` is `true`
+		// iOS bug: reloaded items are not included in the snapshot when `animatingDifferences` is `true`
 		// workaround: applying the snapshot with `animatingDifferences` set to `false` reloads the items properly
 		if isAnimatingDifferences {
 			dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
@@ -80,6 +80,12 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 			dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
 				self?.delegate?.didChangeContent()
 			}
+		}
+
+		// iOS bug: `fetchLimit` is not always respected when used in `NSFetchedResultsController`
+		// workaround: perform the fetch again
+		if controller.fetchRequest.fetchLimit > 0 && snapshot.itemIdentifiers.count > controller.fetchRequest.fetchLimit {
+			performFetch()
 		}
 	}
 
