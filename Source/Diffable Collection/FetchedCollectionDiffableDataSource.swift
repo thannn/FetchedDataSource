@@ -56,7 +56,7 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 	// MARK: - NSFetchedResultsControllerDelegate
 
 	public func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChangeContentWith snapshot: NSDiffableDataSourceSnapshotReference) {
-		delegate?.willChangeContent()
+		contentWillChange()
 
 		let snapshotWithPermanentIDs = obtainPermanentIDs(for: snapshot, in: controller.managedObjectContext)
 		let typedSnapshot = snapshotWithPermanentIDs as NSDiffableDataSourceSnapshot<String, NSManagedObject>
@@ -73,12 +73,12 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 		if isAnimatingDifferences {
 			dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
 				self?.dataSource.apply(snapshot, animatingDifferences: false) {
-					self?.delegate?.didChangeContent()
+					self?.contentDidChange()
 				}
 			}
 		} else {
 			dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-				self?.delegate?.didChangeContent()
+				self?.contentDidChange()
 			}
 		}
 
@@ -106,5 +106,27 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 			}
 		}
 		return snapshotWithPermanentIDs
+	}
+
+	private func contentWillChange() {
+		executeOnMainThread {
+			self.delegate?.willChangeContent()
+		}
+	}
+
+	private func contentDidChange() {
+		executeOnMainThread {
+			self.delegate?.didChangeContent()
+		}
+	}
+
+	private func executeOnMainThread(execute: @escaping () -> Void) {
+		if Thread.current.isMainThread {
+			execute()
+		} else {
+			DispatchQueue.main.async {
+				execute()
+			}
+		}
 	}
 }
