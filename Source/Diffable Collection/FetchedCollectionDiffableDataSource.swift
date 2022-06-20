@@ -60,32 +60,33 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 
 		let snapshotWithPermanentIDs = obtainPermanentIDs(for: snapshot, in: controller.managedObjectContext)
 		let typedSnapshot = snapshotWithPermanentIDs as NSDiffableDataSourceSnapshot<String, NSManagedObject>
-		var snapshot: NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem> = .init()
+		var snapshot = dataSource.snapshot()
 		typedSnapshot.sectionIdentifiers.forEach { sectionIdentifier in
 			let section: FetchedDiffableSection = .init(identifier: sectionIdentifier)
+			snapshot.deleteSections([section])
 			let items: [FetchedDiffableItem] = typedSnapshot.itemIdentifiers(inSection: sectionIdentifier).map { .init(item: $0) }
 			snapshot.appendSections([section])
 			snapshot.appendItems(items, toSection: section)
 		}
 
-		// iOS bug: reloaded items are not included in the snapshot when `animatingDifferences` is `true`
-		// workaround: applying the snapshot with `animatingDifferences` set to `false` reloads the items properly
-		if isAnimatingDifferences {
-			dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
-				self?.dataSource.apply(snapshot, animatingDifferences: false) {
-					self?.contentDidChange()
+		DispatchQueue.main.async {
+			// iOS bug: reloaded items are not included in the snapshot when `animatingDifferences` is `true`
+			// workaround: applying the snapshot with `animatingDifferences` set to `false` reloads the items properly
+			if self.isAnimatingDifferences {
+				self.dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+					self?.dataSource.apply(snapshot, animatingDifferences: false) {
+						DispatchQueue.main.async { // dispatch async required to avoid deadlock in case the delegate inititates another `apply()`
+							self?.contentDidChange()
+						}
+					}
+				}
+			} else {
+				self.dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+					DispatchQueue.main.async { // dispatch async required to avoid deadlock in case the delegate inititates another `apply()`
+						self?.contentDidChange()
+					}
 				}
 			}
-		} else {
-			dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-				self?.contentDidChange()
-			}
-		}
-
-		// iOS bug: `fetchLimit` is not always respected when used in `NSFetchedResultsController`
-		// workaround: perform the fetch again
-		if controller.fetchRequest.fetchLimit > 0 && snapshot.itemIdentifiers.count > controller.fetchRequest.fetchLimit {
-			performFetch()
 		}
 	}
 
@@ -109,24 +110,10 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 	}
 
 	private func contentWillChange() {
-		executeOnMainThread {
-			self.delegate?.willChangeContent()
-		}
+		delegate?.willChangeContent()
 	}
 
 	private func contentDidChange() {
-		executeOnMainThread {
-			self.delegate?.didChangeContent()
-		}
-	}
-
-	private func executeOnMainThread(execute: @escaping () -> Void) {
-		if Thread.current.isMainThread {
-			execute()
-		} else {
-			DispatchQueue.main.async {
-				execute()
-			}
-		}
+		delegate?.didChangeContent()
 	}
 }
