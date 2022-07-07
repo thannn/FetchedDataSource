@@ -69,6 +69,8 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 			snapshot.appendItems(items, toSection: section)
 		}
 
+		contentChangeWillBeApplied(snapshot: &snapshot)
+
 		DispatchQueue.main.async {
 			// iOS bug: reloaded items are not included in the snapshot when `animatingDifferences` is `true`
 			// workaround: applying the snapshot with `animatingDifferences` set to `false` reloads the items properly
@@ -111,6 +113,10 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 
 	private func contentWillChange() {
 		delegate?.willChangeContent()
+	}
+
+	private func contentChangeWillBeApplied(snapshot: inout NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem>) {
+		delegate?.contentChangeWillBeApplied(snapshot: &snapshot)
 	}
 
 	private func contentDidChange() {
