@@ -55,9 +55,12 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 	}
 
 	// MARK: - NSFetchedResultsControllerDelegate
+	public func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
+		delegate?.willChangeContent()
+	}
 
 	public func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChangeContentWith snapshot: NSDiffableDataSourceSnapshotReference) {
-		contentWillChange()
+		var itemsBeforeChange = internalSnapshot.itemIdentifiers
 
 		let snapshotWithPermanentIDs = obtainPermanentIDs(for: snapshot, in: controller.managedObjectContext)
 		let typedSnapshot = snapshotWithPermanentIDs as NSDiffableDataSourceSnapshot<String, NSManagedObject>
@@ -72,25 +75,15 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 		var externalSnapshot = internalSnapshot // duplicate, modifiable snapshot to be displayed
 		contentChangeWillBeApplied(snapshot: &externalSnapshot)
 
-		DispatchQueue.main.async {
-			// iOS bug: reloaded items are not included in the snapshot when `animatingDifferences` is `true`
-			// workaround: applying the snapshot with `animatingDifferences` set to `false` reloads the items properly
-			if self.isAnimatingDifferences {
-				self.dataSource.apply(externalSnapshot, animatingDifferences: true) { [weak self] in
-					self?.dataSource.apply(externalSnapshot, animatingDifferences: false) {
-						DispatchQueue.main.async { // dispatch async required to avoid deadlock in case the delegate inititates another `apply()`
-							self?.contentDidChange()
-						}
-					}
-				}
-			} else {
-				self.dataSource.apply(externalSnapshot, animatingDifferences: false) { [weak self] in
-					DispatchQueue.main.async { // dispatch async required to avoid deadlock in case the delegate inititates another `apply()`
-						self?.contentDidChange()
-					}
-				}
-			}
-		}
+		var itemsAfterChange = externalSnapshot.itemIdentifiers
+		var itemsToReconfigure = Array(Set(itemsBeforeChange).intersection(Set(itemsAfterChange)))
+		externalSnapshot.reloadItems(itemsToReconfigure) // using `reconfigureItems(_:)` does not trigger a cell resize
+
+		self.dataSource.apply(externalSnapshot, animatingDifferences: isAnimatingDifferences)
+	}
+
+	public func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
+		delegate?.didChangeContent()
 	}
 
 	// MARK: - Helpers
@@ -112,15 +105,7 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 		return snapshotWithPermanentIDs
 	}
 
-	private func contentWillChange() {
-		delegate?.willChangeContent()
-	}
-
 	private func contentChangeWillBeApplied(snapshot: inout NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem>) {
 		delegate?.contentChangeWillBeApplied(snapshot: &snapshot)
-	}
-
-	private func contentDidChange() {
-		delegate?.didChangeContent()
 	}
 }
