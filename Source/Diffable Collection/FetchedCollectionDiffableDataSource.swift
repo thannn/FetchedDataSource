@@ -16,10 +16,17 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 	// MARK: - Properties
 	/// A boolean indicating whether differences should be animated. The default value is `true`.
 	public var isAnimatingDifferences: Bool = true
+	public var isUpdatingAutomatically: Bool = true {
+		didSet {
+			guard isUpdatingAutomatically else { return }
+			applyPendingSnapshot()
+		}
+	}
 
 	private let controller: NSFetchedResultsController<NSFetchRequestResult>
 	private let dataSource: FetchedDiffableDataSource
-	private lazy var internalSnapshot: NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem> = .init() // actual, non-modifiable snapshot to maintain data integrity
+	private lazy var internalSnapshot: NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem> = .init() // non-modifiable snapshot to maintain data integrity, this snapshot stays in sync with the database
+	private var pendingSnapshot: NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem>? // store pending changes while `isUpdatingAutomatically` is set to `false`
 	private weak var delegate: FetchedCollectionDiffableDataSourceDelegate?
 
 	// MARK: - Lifecycle
@@ -72,14 +79,18 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 			internalSnapshot.appendItems(items, toSection: section)
 		}
 
-		var externalSnapshot = internalSnapshot // duplicate, modifiable snapshot to be displayed
+		var externalSnapshot = internalSnapshot // modifiable snapshot to be displayed
 		contentChangeWillBeApplied(snapshot: &externalSnapshot)
 
 		var itemsAfterChange = externalSnapshot.itemIdentifiers
 		var itemsToReconfigure = Array(Set(itemsBeforeChange).intersection(Set(itemsAfterChange)))
 		externalSnapshot.reloadItems(itemsToReconfigure) // using `reconfigureItems(_:)` does not trigger a cell resize
 
-		self.dataSource.apply(externalSnapshot, animatingDifferences: isAnimatingDifferences)
+		if isUpdatingAutomatically {
+			self.dataSource.apply(externalSnapshot, animatingDifferences: isAnimatingDifferences)
+		} else {
+			pendingSnapshot = externalSnapshot
+		}
 	}
 
 	public func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
@@ -107,5 +118,11 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 
 	private func contentChangeWillBeApplied(snapshot: inout NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem>) {
 		delegate?.contentChangeWillBeApplied(snapshot: &snapshot)
+	}
+
+	private func applyPendingSnapshot() {
+		guard let pendingSnapshot else { return }
+		defer { self.pendingSnapshot = nil }
+		dataSource.apply(pendingSnapshot, animatingDifferences: isAnimatingDifferences)
 	}
 }
