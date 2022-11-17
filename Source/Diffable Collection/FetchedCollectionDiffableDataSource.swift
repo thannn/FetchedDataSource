@@ -62,10 +62,6 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 	}
 
 	// MARK: - NSFetchedResultsControllerDelegate
-	public func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
-		delegate?.willChangeContent()
-	}
-
 	public func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChangeContentWith snapshot: NSDiffableDataSourceSnapshotReference) {
 		var itemsBeforeChange = internalSnapshot.itemIdentifiers
 
@@ -80,21 +76,17 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 		}
 
 		var externalSnapshot = internalSnapshot // modifiable snapshot to be displayed
-		contentChangeWillBeApplied(snapshot: &externalSnapshot)
+		delegate?.contentChangeWillBeApplied(snapshot: &externalSnapshot)
 
 		var itemsAfterChange = externalSnapshot.itemIdentifiers
 		var itemsToReconfigure = Array(Set(itemsBeforeChange).intersection(Set(itemsAfterChange)))
 		externalSnapshot.reloadItems(itemsToReconfigure) // using `reconfigureItems(_:)` does not trigger a cell resize
 
 		if isUpdatingAutomatically {
-			self.dataSource.apply(externalSnapshot, animatingDifferences: isAnimatingDifferences)
+			applySnapshot(snapshot: externalSnapshot)
 		} else {
 			pendingSnapshot = externalSnapshot
 		}
-	}
-
-	public func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
-		delegate?.didChangeContent()
 	}
 
 	// MARK: - Helpers
@@ -116,13 +108,16 @@ public final class FetchedCollectionDiffableDataSource: NSObject, NSFetchedResul
 		return snapshotWithPermanentIDs
 	}
 
-	private func contentChangeWillBeApplied(snapshot: inout NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem>) {
-		delegate?.contentChangeWillBeApplied(snapshot: &snapshot)
+	private func applySnapshot(snapshot: NSDiffableDataSourceSnapshot<FetchedDiffableSection, FetchedDiffableItem>) {
+		delegate?.willChangeContent()
+		dataSource.apply(snapshot, animatingDifferences: isAnimatingDifferences) { [weak self] in
+			self?.delegate?.didChangeContent()
+		}
 	}
 
 	private func applyPendingSnapshot() {
 		guard let pendingSnapshot else { return }
 		defer { self.pendingSnapshot = nil }
-		dataSource.apply(pendingSnapshot, animatingDifferences: isAnimatingDifferences)
+		applySnapshot(snapshot: pendingSnapshot)
 	}
 }
